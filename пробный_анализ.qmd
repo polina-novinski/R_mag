@@ -1,0 +1,545 @@
+---
+title: "Пробный анализ"
+format: html
+editor: visual
+author: paulina novinskaya
+date: today
+date-format: D.MM.YYYY
+abstract: Небольшое исследование эмигрантских журналов.
+lang: ru
+toc: true
+number-sections: true
+df-print: paged
+code-annotations: hover
+bibliography: bibli.bib
+---
+
+## Журналы эмиграции
+### Отбор данных 
+Составляя базу данных, на основе которой будет проводиться анализ, я опиралась на "Литературную энциклопедию русского зарубежья". Для эксперимента я решила включить только те издания, которым в энциклопедии посвящены отдельные рубрики (т.е. не включены были журналы, просто перечисленные). Это значительно сократило количество журналов, а также менее показательным стало изображение распределения жкрналов по городам. Но я решила, что это интересно тем, что позволит посмотреть именно на самые влиятельные издания.
+
+### Анализ распределения
+
+Установка необходимых пакетов:
+```{r message = FALSE}
+library(tidyverse)
+library(tidytext)
+library(tokenizers)
+library(rvest)
+library(showtext)
+```
+Код, считающий распределение журналов по городам:
+
+```{r message = FALSE }
+font_add(family = "vibes", "GreatVibes-Regular.ttf")
+showtext_auto()
+url <- "https://github.com/polina-novinski/R_projrct/archive/refs/heads/main.zip"
+download.file(url, destfile = "main2.zip")
+unzip("main2.zip")
+my_files <- list.files("R_projrct-main", pattern = ".csv", full.names = TRUE)
+
+bd <-  read.csv("R_projrct-main/newspapers4.csv", sep = ";")
+bd_city <- bd |> 
+  count(city) |> 
+  arrange(-n) 
+bd_city |> 
+  ggplot(aes(reorder(city, n,), n, fill = city)) +
+  geom_bar(stat = "identity",  show.legend = FALSE) + 
+  labs(
+    x = NULL, 
+    y = NULL,
+    title = "Количество журналов по городам"
+  ) +
+  theme_light() +
+  coord_flip()  +
+  theme(axis.title = element_text(family = "vibes", size = 12, color = "grey40"), 
+        title = element_text(family = "vibes", size = 16, color = "grey30")) +
+  geom_text(
+            aes(label = n),
+            family = "serif", 
+            hjust = 1.2, 
+            color = "darkred")
+```
+
+В целом результат ожидаемый: в период с 1917 по 1939 наибольшее количество изданий - 27 - выпускалось в Париже, попробуем сделать немного более интересное сравнение: посмотрим, сколько каждый год появлялось новых журналов для каждого из городов. 
+```{r message = FALSE}
+bd_year_all <- bd |> 
+  group_by(year, city) |> 
+  summarise(n = n()) |> 
+  arrange(year)
+bd_year_all |>
+  ggplot(aes(year, n, color = city)) + 
+  geom_point() +
+  labs(
+    x = NULL, 
+    y = NULL,
+    title = "Количество журналов по годам"
+  ) +
+  scale_x_continuous(breaks = seq(1917, 1937, 1)) +
+  theme_light() +
+  coord_flip() +
+  theme(title = element_text(family = "vibes", size = 16, color = "grey30"), plot.title.position = "panel")
+  
+```
+Для построения этого графика был использован именно год, когда появился первый номер журнала/газеты. Мы можем сделать вывод, что пик новых изданий приходится на 1920-1922-е годы (4 журнала в год), что, возможно, связано с тем, что в эти годы эмигрирует большое количество писателей, издателей (в т.ч. "философский пароход"), первоначально остававшихся в России, но теперь принявших решение уехать. Зарубежом они желают отчасти восстановить ту систему, в которой существовали, многие из них надеются на обмен литературой с Россией и/или желают сохранить культуру, для чего требуется создание своего литературного поля. 
+
+На графике видно, что основная роль в этом процессе принадлежит двум города - Берлину и Парижу, проанализируем, как меняется литературный центр с течением времени.
+```{r message = FALSE }
+bd_year <- bd |> 
+  select(year, city) |> 
+  arrange(year) |> 
+  filter(city %in% c("Берлин", "Париж"))
+bd_year |> 
+  ggplot(aes(year, fill = city)) + 
+  geom_bar()
+```
+
+Немного укрупним данные, так как с 1929 года мы видим только Париж, это для нас не очень информативно, а также преобразуем график, чтобы на нем было видно процентное соотношение.
+```{r message = FALSE }
+bd_c <- bd_year |> 
+  count(year)
+bd_count <- bd_year |> 
+  add_count(year, name = "all") |> 
+  add_count(city, year, name = "counts") |> 
+  distinct(city, year, counts, all) |> 
+  mutate(share = counts / all)
+label_data <- bd_count |> 
+  filter(city == "Берлин")
+bd_count |> 
+  filter(year < "1929") |> 
+  ggplot(aes(year, share, fill = city)) +
+  geom_bar(stat = "identity", position = position_fill(reverse = TRUE), color = "darkred") + 
+  coord_flip()  +
+  labs(
+    x = NULL, 
+    y = NULL,
+    title = "Литературные центры"
+  ) +
+  scale_x_continuous(breaks = seq(1917, 1929, 1)) +
+  theme_light() +
+  theme(title = element_text(family = "vibes", size = 16, color = "grey30"), plot.title.position = "panel") +
+  scale_fill_brewer(palette = 'Pastel2') +
+  geom_text(data = label_data, 
+            aes(label = round(share, 2),
+                y = share),
+            family = "serif", 
+            hjust = 1.2, 
+            color = "darkred")
+```
+Построенная диаграмма подтверждает, что в период расцвета издательской деятельности Берлин становится ведущим городом: 
+
+ >Начиная с 1920 Берлин становится центром информационного обмена. В первую очередь это было связано с его ролью издательского центра.
+ 
+ > --- ЛЭРЗ
+ 
+ А позднее литературный центр перемещается в Париж и остается там: 
+ 
+ >В сложившейся ситуации перемещение культурного центра из Берлина в Париж в 1924-1925 виделось как закономерный итог, подведенный под романтическим временем надежд и иллюзий.
+ 
+  > --- ЛЭРЗ
+  
+
+### Определение частотности слов
+
+Несмотря на то, что база данных совсем небольшая - 68 строк, я решила попробовать посмотреть, какие слова чаще всего встречаются в названиях журналов. Для этого предварительно была проведена лемматизация:
+```{r message = FALSE }
+remotes::install_github("dmafanasyev/rulexicon")
+library(rulexicon)
+library(udpipe)
+udpipe_download_model(language = "russian-syntagrus")
+rus <- udpipe_load_model(file = "russian-syntagrus-ud-2.5-191206.udpipe")
+corpus_words <- udpipe_annotate(rus, bd$name)
+corpus_tbl <- as_tibble(corpus_words) |> 
+  select(-paragraph_id) 
+corpus_tbl$lemma[corpus_tbl$lemma == 'Верст'] <- "Верста"
+corpus_tbl$lemma[corpus_tbl$lemma == 'содружеств'] <- "содружество"
+corpus_tbl$lemma[corpus_tbl$lemma == 'звить'] <- "звено"
+corpus_tbl$lemma[corpus_tbl$lemma == '	
+Иллюстрировать'] <- "иллюстрированный"
+corpus_tbl$lemma[corpus_tbl$lemma == '	
+Сатирикона'] <- "Сатирикон"
+```
+
+Далее корпус был очищен от стоп-слов:
+```{r message = FALSE }
+library(ggplot2)
+library(stopwords)
+stopwords_ru <- c(
+  stopwords("ru", source = "snowball"),
+  stopwords("ru", source = "marimo"),
+  stopwords("ru", source = "nltk"))
+
+# уберем повторы и упорядочим по алфавиту
+stopwords_ru <- sort(unique(stopwords_ru))
+other <- c("-")
+corpus_words_tidy <- corpus_tbl |>  
+  filter(!lemma %in% stopwords_ru) |> 
+  filter(!lemma %in% other)
+```
+
+И построен график, показывающий, какие части речи фигурируют в названиях:
+```{r message = FALSE }
+counts <- corpus_words_tidy |> 
+   filter(upos %in% c("NOUN", "ADJ", "PROPN")) |> 
+   group_by(upos) |> 
+   count() |> 
+   arrange(-n)
+
+counts |> 
+  ggplot(aes(x = reorder(upos, n), y = n, fill = upos)) +
+  geom_bar(stat = "identity", show.legend = F) +
+  coord_flip() +
+  theme_light()  +
+  scale_fill_brewer(palette = 'Pastel2') +
+  labs(
+    x = NULL, 
+    y = NULL,
+    title = "Части речи"
+  ) +
+  theme_light() +
+  theme(title = element_text(family = "vibes", size = 16, color = "grey30"), plot.title.position = "panel") +
+  geom_text(
+            aes(label = n),
+            family = "serif", 
+            hjust = 1.2, 
+            color = "darkred")
+```
+**Наиболее частотные существительные:**
+```{r echo = FALSE, message = FALSE }
+c_noun <- corpus_words_tidy |> 
+  filter(upos == "NOUN") |> 
+  group_by(lemma) |> 
+  summarise(n = n()) |> 
+  arrange(-n)
+c_noun |> 
+  slice_head(n = 4) |> 
+  ggplot(aes(x = reorder(lemma, n), y = n, fill = lemma)) +
+  geom_bar(stat = "identity", show.legend = F) +
+  scale_fill_brewer(palette = 'Pastel2') +
+  labs(
+    x = NULL, 
+    y = NULL
+  ) +
+  theme_light()
+```
+**Наиболее частотные прилагательные:**
+```{r echo = FALSE, message = FALSE }
+c_adj <- corpus_words_tidy |> 
+  filter(upos == "ADJ") |> 
+  group_by(lemma) |> 
+  summarise(n = n()) |> 
+  arrange(-n)
+c_adj |> 
+  slice_head(n = 4) |> 
+  ggplot(aes(x = reorder(lemma, n), y = n, fill = lemma)) +
+  geom_bar(stat = "identity", show.legend = F) +
+  scale_fill_brewer(palette = 'Pastel2') +
+  labs(
+    x = NULL, 
+    y = NULL
+  ) +
+  theme_light()
+```
+Исходя из полученных данных, мы видим, что большая часть журналов имеет в своем названии существительное - либо отдельное ("Возрождение", "Зарница", "Беседа" и тд), либо в паре с прилагательным ("Современные записки", "Русский голос"). Прилагательное не употребленное вместе с существительным всего одно - "Благонамеренный". Самые частотные существительные все используются в паре с прилагательными, но, что более интересно, - есть пересечения между самыми частотными прилагательными и существительными ("Русский голос" и "Таллинский русский голос"). Что касается прилагательных, можно сказать, что существительные, которые к ним относятся во многих случаях весьма синонимичны или выражают схожую идею: например, "Последние известия" и "Последние новости"; "Новый дом", "Новый корабль" и "Новый град".
+
+Если говорить об именах собственных, то в 5/6 случаев это "Россия" и только в одно - город, в котором выпускается журнал - "Сорренто".
+
+**Общий график частотности слов:**
+```{r message = FALSE }
+corpus_words_tidy <- corpus_tbl |>  
+  filter(!lemma %in% stopwords_ru) |> 
+  filter(!lemma %in% other)
+corpus_words_tidy |> 
+  count(lemma, sort = TRUE)  |> 
+  slice_head(n = 9) |> 
+  ggplot(aes(reorder(lemma, n), n, fill = lemma)) +
+  geom_col(show.legend = F) + 
+  coord_flip() +
+  labs(
+    x = NULL, 
+    y = NULL,
+    title = "Самые частотные слова"
+  ) +
+  scale_y_continuous(breaks = seq(0, 10, 1)) +
+  theme_light() +
+  theme(title = element_text(family = "vibes", size = 16, color = "grey30"), plot.title.position = "panel")
+
+```
+ 
+***
+А это малоинформативный график (тк мало данных), просто мне было интересно попробовать написать код, повторяющий исследование Ф. Моретти. Я здесь считаю среднюю длинну названий по годам.
+```{r message = FALSE }
+library(tidytext)
+name <- bd$name
+y_n <- bd |> 
+  arrange(year) |> 
+  count(year) 
+y_n <- y_n$n
+bd_sr <- bd |> 
+  mutate(id = name) |> 
+  select(-city) |> 
+  unnest_tokens(token, name) |> 
+  add_count(id) |> 
+  arrange(year)
+bd_sr |> 
+  count(year) |> 
+  mutate(len = y_n) |> 
+  mutate(middle = n / len) |> 
+  ggplot(aes(year, middle, fill = year)) +
+  geom_bar(stat = "identity")
+```
+## Литературные анкеты
+
+В этом разделе я работала с литературной анкетой, опубликованной во втором номере журнала "Числа". В ней 8 писателей отвечали на следующие вопросы:
+ 
+1. Считаете-ли Вы, что русская литература переживаетъ въ настоящее время періодъ упадка?
+
+2. Если да — въ чемъ Вы видите признаки этого явленія и
+
+3. каковы его причины?
+
+Мне было интересно 1) посмотреть на эмоциональную тональность текста каждого из отвечавших, 2) выделить основные топики, проанализировать их распределение векторном пространстве слов. 
+
+***
+
+Одна из сложностей, с которой я столкнулась, - в эмигрантских журналах текст с дореформенной орфографией, и, соответственно, лемматизация проходила не очень успешно, поскольку используемая модель была обучена на современном русском. Чтобы решить эту проблему, я сначала с помощью кода, написанного на языке python, привела все тексты в нужную форму и только после этого смогла отдать их в R для обработки. 
+
+### Эмоциональная тональность 
+
+Загрузка данных:
+```{r message = FALSE }
+bd2 <-  read.csv("R_projrct-main/literature2.csv", sep = ";")
+remotes::install_github("dmafanasyev/rulexicon")
+library(rulexicon)
+library(tidyverse)
+library(tidytext)
+library(udpipe)
+bd_answ <- bd2
+names <- bd_answ$author
+udpipe_download_model(language = "russian-syntagrus")
+
+rus <- udpipe_load_model(file = "russian-syntagrus-ud-2.5-191206.udpipe")
+corpus_answ <- udpipe_annotate(rus, bd_answ$text)
+answ_tbl <- as_tibble(corpus_answ) 
+answ_tbl$doc_id[answ_tbl$doc_id == 'doc1'] <- names[1]
+answ_tbl$doc_id[answ_tbl$doc_id == 'doc2'] <- names[2]
+answ_tbl$doc_id[answ_tbl$doc_id == 'doc3'] <- names[3]
+answ_tbl$doc_id[answ_tbl$doc_id == 'doc4'] <- names[4]
+answ_tbl$doc_id[answ_tbl$doc_id == 'doc5'] <- names[5]
+answ_tbl$doc_id[answ_tbl$doc_id == 'doc6'] <- names[6]
+answ_tbl$doc_id[answ_tbl$doc_id == 'doc7'] <- names[7]
+answ_tbl$doc_id[answ_tbl$doc_id == 'doc8'] <- names[8]
+```
+
+**Лемматизация и тональный анализ:**
+```{r message = FALSE }
+set.seed(0211)
+afinn <- hash_sentiment_afinn_ru
+answ_tbl_filter <- answ_tbl |> 
+  filter(upos != "PUNCT") |> 
+  select(lemma, doc_id) |>  
+  rename(token = lemma)
+answ_sent <- answ_tbl_filter|> 
+  inner_join(afinn)
+
+
+answ_chunk <- answ_sent |> 
+  mutate(tone = case_when( score >= 0 ~ "pos",
+                           score < 0 ~ "neg")) |> 
+  group_by(doc_id, tone) |> 
+  summarise(sum = sum(score))
+```
+
+**Построение графика:**
+```{r message = FALSE }
+library(paletteer)
+library(tidytext)
+pal <- paletteer_d("rcartocolor::ArmyRose")
+answ_chunk |> 
+  ggplot(aes(doc_id, sum, fill = tone)) +
+  geom_col() + 
+  labs(title = "Эмоциональная тональность (без учета отрицаний)",
+       x = NULL,
+       y = NULL) +
+  theme_light()  +
+  #scale_fill_brewer(palette = 'Pastel2') +
+  scale_fill_manual(values = c(pal[5], pal[3])) +
+  coord_flip() +
+  geom_text(
+    aes(label = round(sum)),
+    family = "serif", 
+    hjust = 1, 
+    color = "darkred") +
+  theme(title = element_text(family = "vibes", size = 16, color = "grey30"), plot.title.position = "panel")
+
+```
+Я решила, что на графике стоит изобразить и долю негативной лексики, и позитивной, поскольку у многих авторов среднее значение pos и neg стремилось к 0, так как тексты наполнены и тем, и тем видом лексики. На построенном графике видно, что большинство писателей настроены пессимистично относительно современной им литературы. Компьютерный анализ всего лишь подтвержает общее впечатление, создающееся при прочтении анкет: респонденты сходятся на том, что литература в их время точно не находится в периоде "расцвета", но это закономерно, связано с историческими событиями. Кто-то, как, например, Вейдле, говорит о том, что действительно нет пока ничего стоящего, Лукаш утверждает, что упадок литературы связан с распадом российской нации и необходимо выйти из этого переходного состояния. Некоторые авторы настроены более оптимистично: Бунин, Алданов считают, что и сейчас достаточно талантливых писателей, хотя они все равно не сравнятся с "золотым веком". 
+
+Весьма интересно, на мой взгляд, посмотреть на тексты писателей, у которых на графике наибольшая отметка "neg" - это Федотов и Слоним. Исследование показывает, что большая доля негативной лексики в их ответах связана с упоминанием цензуры. Оба автора говорят о том, что политическая ситуация, сложившаяся в России, мешает развитию литературы "центра".
+
+> Искусство постоянно подвергается в России насильственному воздействию. Литературу пытаются превратить в государственно полезное учреждение. 
+
+> --- Марк Слоним
+
+> Предполагаю причиной этого внутреннюю исчерпанность революционной идеи, духовную пустоту вынесшего революцию поколения и — в трудно учитываемой мере — удушающие общественные и цензурные условия последних лет.
+
+> --- Г. Федотов
+
+***
+
+**Построение общего сравнительного облака слов:**
+```{r message = FALSE }
+library(reshape2)
+library(wordcloud)
+answ_cloud <- answ_sent |> 
+  mutate(tone = case_when( score >= 0 ~ "pos",
+                           score < 0 ~ "neg"))
+library(paletteer)
+pal <- paletteer_d("rcartocolor::ArmyRose")
+set.seed(0211)
+par(mar = c(1, 1, 1, 1))
+answ_cloud |> 
+  count(token, tone, sort = TRUE) |> 
+  acast(token ~ tone, value.var = "n", fill = 0) |> 
+  comparison.cloud(colors = c(pal[1], pal[5]),
+                   max.words = 99) +
+  facet_wrap(~doc_id)
+```
+
+### Латентно-семантический анализ
+
+Этот раздел был наиболее трудным для меня, но, пожалуй, самым интересным, так как латентно-семантический анализ поволяет увидеть ваимосвязи между словами и посмотреть их распределение между всеми текстами. 
+
+Небольшое пояснение к коду: с помощью "скользящего окна" программа проходится по всем документам, потом считается PMI (вероятность встретить два слова рядом) для всех слов, вычисляется косинус сингулярного разложения (расстояния между словами, которые представлены векторами) и визуализируется. 
+```{r echo = FALSE, message = FALSE }
+library(tidyverse)
+library(tidytext)
+library(stopwords)
+stopwords_ru <- c(
+  stopwords("ru", source = "snowball"),
+  stopwords("ru", source = "marimo"),
+  stopwords("ru", source = "nltk"))
+
+# уберем повторы и упорядочим по алфавиту
+stopwords_ru <- sort(unique(stopwords_ru))
+other <- c("это", "по-нять", "ничто", "то-есть", "чех", "г.од", "еи")
+```
+
+```{r message = FALSE }
+answ_tbl_tidy <- answ_tbl |> 
+  filter(!lemma %in% stopwords_ru) |> 
+  filter(!lemma %in% other) |> 
+  filter(!upos == "PUNCT")
+
+nested_answ <- answ_tbl_tidy |> 
+  dplyr::select(doc_id, lemma) |> 
+  nest(tokens = c(lemma))
+
+slide_windows <- function(tbl, window_size) {
+  skipgrams <- slider::slide(
+    tbl, 
+    ~.x, 
+    .after = window_size - 1, 
+    .step = 1, 
+    .complete = TRUE
+  )
+  
+  safe_mutate <- safely(mutate)
+  
+  out <- map2(skipgrams,
+              1:length(skipgrams),
+              ~ safe_mutate(.x, window_id = .y))
+  
+  out |> 
+    transpose() |> 
+    pluck("result") |> 
+    compact() |> 
+    bind_rows()
+}
+answ_windows <- nested_answ |> 
+  mutate(tokens = map(tokens, slide_windows, 10L)) |>  
+  unnest(tokens) |> 
+  unite(window_id, doc_id, window_id)
+
+answ_windows
+library(widyr)
+answ_pmi  <- answ_windows  |> 
+  pairwise_pmi(lemma, window_id)
+answ_pmi |> 
+  arrange(-abs(pmi))
+answ_ppmi <- answ_pmi |> 
+  mutate(ppmi = case_when(pmi < 0 ~ 0, 
+                          .default = pmi)) 
+
+answ_ppmi |> 
+  arrange(pmi)
+word_emb <- answ_ppmi |> 
+  widely_svd(item1, item2, ppmi,
+             weight_d = FALSE, nv = 100) |> 
+  rename(word = item1) 
+
+word_emb |> 
+  filter(dimension < 10) |> 
+  group_by(dimension) |> 
+  top_n(10, abs(value)) |> 
+  ungroup() |> 
+  mutate(word = reorder_within(word, value, dimension)) |> 
+  ggplot(aes(word, value, fill = dimension)) +
+  geom_col(alpha = 0.8, show.legend = FALSE) +
+  facet_wrap(~dimension, scales = "free_y", ncol = 3) +
+  scale_x_reordered() +
+  coord_flip() +
+  labs(
+    x = NULL, 
+    y = "Value",
+    title = "Первые 9 главных компонент"
+  ) +
+  scale_fill_viridis_c()
+```
+
+И последний этап - поиск ближайших соседей для слов. Я взяла несколько для примера и получила следующие результаты: 
+```{r message = FALSE }
+library(widyr)
+
+nearest_neighbors <- function(df, feat, doc=F) {
+  inner_f <- function() {
+    widely(
+      ~ {
+        y <- .[rep(feat, nrow(.)), ]
+        res <- rowSums(. * y) / 
+          (sqrt(rowSums(. ^ 2)) * sqrt(sum(.[feat, ] ^ 2)))
+        
+        matrix(res, ncol = 1, dimnames = list(x = names(res)))
+      },
+      sort = TRUE
+    )}
+  if (doc) {
+    df |> inner_f()(doc, dimension, value) }
+  else {
+    df |> inner_f()(word, dimension, value)
+  } |> 
+    select(-item2)
+}
+```
+Здесь я хотела посмотреть, какие слова чаще всего встречаются при упоминании *молодого поколения*:
+```{r message = FALSE }
+word_emb |> 
+  nearest_neighbors("молодой")
+```
+
+При характеристике *совесткой литературы* (здесь видна ошибка при лемматизации) - интересно, что есть и положительно, и отрицательно окрашенные слова:
+```{r message = FALSE }
+word_emb |> 
+  nearest_neighbors("советский")
+```
+
+При упоминании слова *"власть"*  - ассоциации с СССР и в негативном контексте
+```{r message = FALSE }
+word_emb |> 
+  nearest_neighbors("власть")
+```
+О *писателях* :
+```{r message = FALSE }
+word_emb |> 
+  nearest_neighbors("писатель")
+```
